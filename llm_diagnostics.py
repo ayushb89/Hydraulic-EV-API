@@ -25,7 +25,7 @@ if GEMINI_API_KEY and GEMINI_API_KEY != "your_api_key_here":
         except Exception as e:
             print(f"Warning: Failed to configure Gemini API: {e}")
 
-def call_llm(prompt: str) -> str:
+def call_llm(prompt: str) -> list:
     if not is_gemini_configured:
         return None
         
@@ -40,12 +40,13 @@ def call_llm(prompt: str) -> str:
                 json={
                     "model": "google/gemini-2.5-flash",
                     "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 300
+                    "max_tokens": 800
                 }
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
+            text = data["choices"][0]["message"]["content"].strip()
+            return [line.strip().lstrip('-*').strip() for line in text.split('\n') if line.strip()]
         except Exception as e:
             print(f"Error calling OpenRouter API: {e}")
             return None
@@ -53,13 +54,14 @@ def call_llm(prompt: str) -> str:
         try:
             response = llm_model.generate_content(prompt)
             if response and response.text:
-                return response.text.strip()
+                text = response.text.strip()
+                return [line.strip().lstrip('-*').strip() for line in text.split('\n') if line.strip()]
         except Exception as e:
             print(f"Error calling Gemini API: {e}")
             return None
     return None
 
-def generate_llm_feedback(vehicle_type: str, prediction_result: dict, telemetry_row: dict) -> str:
+def generate_llm_feedback(vehicle_type: str, prediction_result: dict, telemetry_row: dict) -> list:
     """
     Calls the LLM API to generate contextual engineering feedback based on telemetry.
     """
@@ -87,12 +89,12 @@ def generate_llm_feedback(vehicle_type: str, prediction_result: dict, telemetry_
     
     return call_llm(prompt)
 
-def generate_unseen_vehicle_feedback(vehicle_type: str, telemetry_row: dict) -> str:
+def generate_unseen_vehicle_feedback(vehicle_type: str, telemetry_row: dict) -> list:
     """
     Fallback call for when the ML model rejects an unseen vehicle category.
     """
     if not is_gemini_configured:
-        return "Unseen vehicle type detected. No ML or AI prediction available."
+        return ["Unseen vehicle type detected.", "No ML or AI prediction available."]
         
     prompt = f"""
     You are an expert Hydraulic EV Maintenance Engineer.
@@ -110,4 +112,4 @@ def generate_unseen_vehicle_feedback(vehicle_type: str, telemetry_row: dict) -> 
     res = call_llm(prompt)
     if res:
         return res
-    return "Error generating AI feedback for unseen vehicle."
+    return ["Error generating AI feedback for unseen vehicle."]
