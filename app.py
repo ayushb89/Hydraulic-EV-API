@@ -24,6 +24,7 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
 from schemas import PredictionRequest, PredictionResponse, HealthResponse
 from models import model_manager
 from utils import predict_pipeline, predict_pipeline_from_df
+from fastapi.middleware.cors import CORSMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -48,6 +49,15 @@ app = FastAPI(
     description="API for predicting health status and failure modes of Hydraulic EV equipment.",
     version="1.0.0",
     lifespan=lifespan
+)
+
+# Add CORS middleware to allow the frontend (like Digital Twin on localhost:5173) to call the API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers (including X-API-Key)
 )
 
 @app.get("/health", response_model=HealthResponse)
