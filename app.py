@@ -1,9 +1,11 @@
-from fastapi import FastAPI, HTTPException, status, Security, Depends
+from fastapi import FastAPI, HTTPException, status, Security, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 import logging
 from contextlib import asynccontextmanager
 import os
+import io
+import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,7 +23,7 @@ def get_api_key(api_key_header: str = Security(api_key_header)):
 
 from schemas import PredictionRequest, PredictionResponse, HealthResponse
 from models import model_manager
-from utils import predict_pipeline
+from utils import predict_pipeline, predict_pipeline_from_df
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -85,6 +87,31 @@ def predict(request: PredictionRequest, api_key: str = Depends(get_api_key)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during prediction processing."
         )
+
+@app.post("/predict/upload", response_model=PredictionResponse)
+async def predict_upload(
+    vehicle_id: str = Form(...),
+    file: UploadFile = File(...),
+    api_key: str = Depends(get_api_key)
+):
+    """
+    Predicts health status from an uploaded CSV file containing telemetry readings.
+    """
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only CSV files are allowed.")
+    
+    try:
+        contents = await file.read()
+        df = pd.read_csv(io.StringIO(contents.decode('utf-8')))
+        
+        if len(df) < 300:
+            raise HTTPException(status_code=400, detail="At least 300 historical readings are required in the CSV.")
+            
+        result = predict_pipeline_from_df(vehicle_id, df)
+        return PredictionResponse(**result)
+    except Exception as e:
+        logger.error(f"Error processing CSV: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid CSV format or processing error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

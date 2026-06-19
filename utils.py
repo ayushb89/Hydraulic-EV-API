@@ -52,11 +52,8 @@ def preprocess_input(request) -> pd.DataFrame:
     df = df.sort_values('timestamp').reset_index(drop=True)
     return df
 
-def predict_pipeline(request) -> Dict[str, Any]:
-    """Runs the complete prediction pipeline for a given request."""
-    # 1. Preprocess Input
-    df = preprocess_input(request)
-    
+def predict_pipeline_from_df(vehicle_id: str, df: pd.DataFrame) -> Dict[str, Any]:
+    """Runs the prediction pipeline directly from a pandas DataFrame."""
     # 2. Generate Features
     df_features = generate_features(df)
     
@@ -64,17 +61,15 @@ def predict_pipeline(request) -> Dict[str, Any]:
     latest_row = df_features.iloc[[-1]].copy()
     
     # 4. Encode Vehicle_Type using vehicle_encoder.pkl
-    # Assuming vehicle_encoder has a transform method
     vehicle_type_raw = latest_row['Vehicle_Type'].iloc[0]
     try:
         latest_row['Vehicle_Type'] = model_manager.vehicle_encoder.transform(latest_row['Vehicle_Type'])
     except ValueError as e:
         # Unseen vehicle type fallback using LLM
         raw_telemetry = df.iloc[-1].to_dict()
-        # Convert timestamp to string so it serializes properly if needed, but dict is fine for LLM prompt
         ai_feedback = generate_unseen_vehicle_feedback(vehicle_type_raw, raw_telemetry)
         return {
-            "vehicle_id": request.vehicle_id,
+            "vehicle_id": vehicle_id,
             "health_status": "Unknown",
             "health_confidence": 0.0,
             "failure_mode": "Unknown",
@@ -118,7 +113,7 @@ def predict_pipeline(request) -> Dict[str, Any]:
         ai_analysis = generate_llm_feedback(vehicle_type_raw, prediction_result, raw_telemetry)
     
     return {
-        "vehicle_id": request.vehicle_id,
+        "vehicle_id": vehicle_id,
         "health_status": health_status,
         "health_confidence": round(health_conf, 2),
         "failure_mode": failure_mode,
@@ -127,3 +122,9 @@ def predict_pipeline(request) -> Dict[str, Any]:
         "recommended_action": recommended_action,
         "ai_analysis": ai_analysis
     }
+
+def predict_pipeline(request) -> Dict[str, Any]:
+    """Runs the complete prediction pipeline for a given request."""
+    # 1. Preprocess Input
+    df = preprocess_input(request)
+    return predict_pipeline_from_df(request.vehicle_id, df)
