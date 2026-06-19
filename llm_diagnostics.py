@@ -78,11 +78,11 @@ def generate_llm_feedback(vehicle_type: str, prediction_result: dict, telemetry_
     Here is the most recent sensor telemetry reading at the time of the alert:
     {telemetry_row}
     
-    Please provide a concise, highly technical diagnostic report (around 3-4 sentences). 
+    Please provide a concise, highly technical diagnostic report. 
     Look closely at the specific sensor values (like pressure, temperature, flow rate, vibration, etc.).
     Point out which specific sensor values are likely causing the '{prediction_result.get('failure_mode')}' and explain the mechanical reasoning.
     Provide a specific recommendation for the maintenance crew.
-    Do NOT use markdown formatting, keep it as a clean text paragraph.
+    Format your response as a clear list of bullet points using standard dashes (-). Do NOT write a paragraph.
     """
     
     return call_llm(prompt)
@@ -103,8 +103,8 @@ def generate_unseen_vehicle_feedback(vehicle_type: str, telemetry_row: dict) -> 
     Here is the telemetry data:
     {telemetry_row}
     
-    Provide a concise assessment (2-3 sentences). Does anything look dangerously high or low for a generic heavy-duty hydraulic EV? Give a quick recommendation.
-    Do NOT use markdown formatting, keep it as a clean text paragraph.
+    Provide a concise assessment. Does anything look dangerously high or low for a generic heavy-duty hydraulic EV? Give a quick recommendation.
+    Format your response as a clear list of bullet points using standard dashes (-). Do NOT write a paragraph.
     """
     
     res = call_llm(prompt)
