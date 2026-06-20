@@ -34,7 +34,7 @@ class PredictionResponse(BaseModel):
     failure_confidence: float
     risk_level: str
     recommended_action: str
-    ai_analysis: Optional[List[str]] = None
+    ai_analysis: Optional[str] = None
 
 class HealthResponse(BaseModel):
     status: str
