@@ -61,9 +61,9 @@ app = FastAPI(
     description=(
         "API for predicting health status and failure modes of Hydraulic EV equipment "
         "and Electric Passenger Vehicles. Supports real-time single-snapshot predictions, "
-        "CSV batch uploads, and EV-specific telemetry analysis."
+        "CSV batch uploads, and EV brake-specific telemetry analysis with full ML models."
     ),
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -204,16 +204,19 @@ def predict_ev(request: EVSnapshotRequest, api_key: str = Depends(get_api_key)):
 
     try:
         telemetry = {
-            "Vehicle_Type":        request.Vehicle_Type,
-            "Motor_RPM":           request.Motor_RPM,
-            "Motor_Temp":          request.Motor_Temp,
-            "Inverter_Temp":       request.Inverter_Temp,
-            "Motor_Torque":        request.Motor_Torque,
-            "Phase_Current":       request.Phase_Current,
-            "Battery_SOC":         request.Battery_SOC,
-            "Battery_Temperature": request.Battery_Temperature,
-            "Vehicle_Speed":       request.Vehicle_Speed,
-            "Operating_Hours":     request.Operating_Hours,
+            "Vehicle_Type":                  request.Vehicle_Type,
+            "Brake_Hydraulic_Pressure_bar":  request.Brake_Hydraulic_Pressure_bar,
+            "Brake_Fluid_Temperature_C":     request.Brake_Fluid_Temperature_C,
+            "Brake_Pedal_Position_pct":      request.Brake_Pedal_Position_pct,
+            "Brake_Line_Pressure_bar":       request.Brake_Line_Pressure_bar,
+            "Brake_Fluid_Level_pct":         request.Brake_Fluid_Level_pct,
+            "ABS_Activation_Frequency":      request.ABS_Activation_Frequency,
+            "Vibration_g":                   request.Vibration_g,
+            "Vehicle_Speed_kmh":             request.Vehicle_Speed_kmh,
+            "Acceleration_ms2":              request.Acceleration_ms2,
+            "Operating_Hours":               request.Operating_Hours,
+            "Battery_SOC":                   request.Battery_SOC,
+            "Battery_Temperature":           request.Battery_Temperature,
         }
 
         result = predict_ev_pipeline(request.vehicle_id, telemetry)

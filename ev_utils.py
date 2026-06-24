@@ -1,3 +1,14 @@
+"""
+ev_utils.py
+────────────
+EV Brake Telemetry prediction pipeline.
+
+Uses:
+  1. ML Path  → if ev_health_model.pkl + ev_failure_model.pkl exist in models/ev/
+  2. Heuristic Fallback → physics-based brake threshold rules
+  3. LLM Analysis → always called for Warning / Critical states
+"""
+
 import pandas as pd
 import numpy as np
 import random
@@ -13,171 +24,188 @@ from llm_diagnostics import generate_ev_feedback
 # EV Risk & Recommendation Helpers
 # ─────────────────────────────────────────────────────────────────
 def calculate_ev_risk(health_status: str) -> str:
-    if health_status.lower() == "normal":
-        return "Low"
-    elif health_status.lower() == "warning":
-        return "Medium"
-    elif health_status.lower() == "critical":
-        return "High"
-    return "Unknown"
+    mapping = {"normal": "Low", "warning": "Medium", "critical": "High"}
+    return mapping.get(health_status.lower(), "Unknown")
 
 
 def generate_ev_recommendation(risk_level: str, failure_mode: str) -> str:
     if risk_level == "Low":
-        return "Vehicle operating normally. No action required."
+        return "EV brake system operating normally. No action required."
 
-    rec = ""
-    if "Inverter" in failure_mode:
-        rec = "Inspect inverter cooling system and thermal paste"
-    elif "Motor_Bearing" in failure_mode:
-        rec = "Schedule motor bearing inspection"
-    elif "Phase_Current" in failure_mode:
-        rec = "Run motor winding resistance test and check inverter outputs"
-    elif "Battery" in failure_mode:
-        rec = "Perform battery cell balancing and BMS diagnostics"
-    elif "Coolant" in failure_mode:
-        rec = "Check coolant lines, pump, and reservoir level"
-    else:
-        rec = "Perform full EV powertrain diagnostic scan"
+    rec_map = {
+        "Brake_Fluid_Overheating":        "Inspect brake fluid condition and cooling channels",
+        "ABS_Sensor_Fault":               "Run ABS self-diagnostic and inspect wheel-speed sensors",
+        "Hydraulic_Pressure_Loss":        "Check master cylinder, calipers, and brake lines for leaks",
+        "Brake_Pad_Wear":                 "Measure pad thickness and inspect rotors for scoring",
+        "Fluid_Contamination":            "Flush and replace brake fluid; check for moisture ingress",
+        "Multiple_Simultaneous_Failures": "Perform full brake system overhaul — multiple systems affected",
+        "Normal_Operation":               "Continue routine monitoring",
+    }
+    rec = rec_map.get(failure_mode, "Perform full EV brake system diagnostic scan")
 
     if risk_level == "Medium":
         return f"{rec} within 7 days."
     elif risk_level == "High":
         return f"CRITICAL: {rec} immediately. Do not operate until inspected."
-    return "Monitor EV powertrain parameters."
+    return "Monitor EV brake parameters."
 
 
 # ─────────────────────────────────────────────────────────────────
-# EV Heuristic Health Detection (when ML models not available)
-# Uses physics-based threshold rules derived from EV engineering
+# EV Brake Heuristic Health Detection (ML fallback)
+# Physics-based threshold rules for EV brake systems
 # ─────────────────────────────────────────────────────────────────
 def heuristic_ev_health(telemetry: dict) -> tuple:
     """
     Returns (health_status, failure_mode, health_confidence, failure_confidence)
-    using EV engineering threshold rules.
+    using EV brake engineering threshold rules.
     """
-    motor_temp    = telemetry.get("Motor_Temp", 0)
-    inverter_temp = telemetry.get("Inverter_Temp", 0)
-    battery_temp  = telemetry.get("Battery_Temperature", 0)
-    battery_soc   = telemetry.get("Battery_SOC", 100)
-    phase_current = telemetry.get("Phase_Current", 0)
-    motor_rpm     = telemetry.get("Motor_RPM", 0)
+    fluid_temp   = telemetry.get("Brake_Fluid_Temperature_C", 0)
+    fluid_level  = telemetry.get("Brake_Fluid_Level_pct", 100)
+    hydraulic_p  = telemetry.get("Brake_Hydraulic_Pressure_bar", 0)
+    line_p       = telemetry.get("Brake_Line_Pressure_bar", 0)
+    abs_freq     = telemetry.get("ABS_Activation_Frequency", 0)
+    vibration    = telemetry.get("Vibration_g", 0)
+    pedal_pos    = telemetry.get("Brake_Pedal_Position_pct", 0)
+    batt_soc     = telemetry.get("Battery_SOC", 100)
+    batt_temp    = telemetry.get("Battery_Temperature", 25)
 
-    # Critical thresholds
-    if motor_temp > 150 or inverter_temp > 90:
-        return "Critical", "Inverter_Thermal_Throttling", 0.91, 0.87
-    if battery_temp > 50 or battery_soc < 5:
-        return "Critical", "Battery_Cell_Imbalance", 0.88, 0.84
-    if phase_current > 700 and motor_rpm < 1000:
-        return "Critical", "Phase_Current_Imbalance", 0.85, 0.80
+    # ── Critical thresholds ─────────────────────────────────────
+    if fluid_temp > 100:
+        return "Critical", "Brake_Fluid_Overheating", 0.91, 0.87
+    if fluid_level < 55:
+        return "Critical", "Hydraulic_Pressure_Loss", 0.90, 0.86
+    if abs(hydraulic_p - line_p) > 25:
+        return "Critical", "Hydraulic_Pressure_Loss", 0.88, 0.83
+    if abs_freq > 8 and vibration > 0.5:
+        return "Critical", "ABS_Sensor_Fault", 0.87, 0.82
+    if vibration > 0.6:
+        return "Critical", "Multiple_Simultaneous_Failures", 0.86, 0.81
 
-    # Warning thresholds
-    if motor_temp > 120 or inverter_temp > 75:
-        return "Warning", "Inverter_Thermal_Throttling", 0.78, 0.72
-    if battery_temp > 42 or battery_soc < 15:
-        return "Warning", "Battery_Cell_Imbalance", 0.75, 0.70
-    if phase_current > 550:
-        return "Warning", "Phase_Current_Imbalance", 0.72, 0.68
-    if motor_rpm > 15000 and motor_temp > 100:
-        return "Warning", "Motor_Bearing_Wear", 0.70, 0.65
+    # ── Warning thresholds ──────────────────────────────────────
+    if fluid_temp > 65:
+        return "Warning", "Brake_Fluid_Overheating", 0.79, 0.74
+    if fluid_level < 75:
+        return "Warning", "Fluid_Contamination", 0.76, 0.71
+    if abs(hydraulic_p - line_p) > 10:
+        return "Warning", "Hydraulic_Pressure_Loss", 0.74, 0.69
+    if abs_freq > 5:
+        return "Warning", "ABS_Sensor_Fault", 0.73, 0.68
+    if vibration > 0.3:
+        return "Warning", "Brake_Pad_Wear", 0.71, 0.66
+    if batt_temp > 40 or batt_soc < 15:
+        return "Warning", "Fluid_Contamination", 0.70, 0.65
 
-    return "Normal", "Normal_Operation", 0.92, 0.88
+    return "Normal", "Normal_Operation", 0.93, 0.90
 
 
 # ─────────────────────────────────────────────────────────────────
-# EV Prediction Pipeline
-# Uses ML if models available, else heuristic rules + LLM
+# Build a 300-row history DataFrame from a single snapshot
+# (Required for rolling-window features)
+# ─────────────────────────────────────────────────────────────────
+def _build_history_df(telemetry: dict, vehicle_type: str) -> pd.DataFrame:
+    """
+    Generates a 300-row DataFrame with small Gaussian noise around the
+    snapshot values, so that rolling features can be computed correctly.
+    """
+    noise = 0.005
+    base_time = datetime.now(timezone.utc) - timedelta(seconds=300)
+    rows = []
+
+    for i in range(299):
+        t = base_time + timedelta(seconds=i)
+        row = {"Timestamp": t.isoformat()}
+        for key, val in telemetry.items():
+            if key == "Vehicle_Type":
+                row[key] = val
+                continue
+            if isinstance(val, (int, float)):
+                row[key] = round(val * (1 + random.uniform(-noise, noise)), 4)
+            else:
+                row[key] = val
+        rows.append(row)
+
+    # Append the actual live snapshot as the last row
+    last = {"Timestamp": (base_time + timedelta(seconds=299)).isoformat()}
+    last.update(telemetry)
+    rows.append(last)
+
+    df = pd.DataFrame(rows)
+    if "Timestamp" in df.columns:
+        df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+        df = df.sort_values("Timestamp").reset_index(drop=True)
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────
+# Main EV Prediction Pipeline
+# ML → Heuristic fallback → LLM analysis
 # ─────────────────────────────────────────────────────────────────
 def predict_ev_pipeline(vehicle_id: str, telemetry: dict) -> Dict[str, Any]:
     """
-    Main EV prediction pipeline.
+    Main EV Brake prediction pipeline.
+
     1. If EV ML models are trained and loaded → use ML prediction.
-    2. Otherwise → use physics-based heuristic rules.
+    2. Otherwise → use physics-based heuristic brake threshold rules.
     3. Always call LLM for deep analysis on Warning/Critical.
     """
-    vehicle_type   = telemetry.get("Vehicle_Type", "EV Vehicle")
-    health_status  = None
-    failure_mode   = None
-    health_conf    = 0.0
-    failure_conf   = 0.0
-    analysis_type  = "ML + AI Analysis (EV Module)"
+    vehicle_type  = telemetry.get("Vehicle_Type", "EV Vehicle")
+    health_status = None
+    failure_mode  = None
+    health_conf   = 0.0
+    failure_conf  = 0.0
+    analysis_type = "ML + AI Analysis (EV Brake Module)"
 
-    # ── ML Path ─────────────────────────────────────────────────
+    # ── ML Path ──────────────────────────────────────────────────
     if ev_model_manager.is_loaded:
         try:
-            # Build 300-row history for rolling features
             random.seed(42)
-            noise = 0.005
-            base_time = datetime.now(timezone.utc) - timedelta(seconds=300)
-            rows = []
-            for i in range(299):
-                t = base_time + timedelta(seconds=i)
-                rows.append({
-                    "timestamp":           t.isoformat(),
-                    "Vehicle_Type":        vehicle_type,
-                    "Motor_RPM":           round(telemetry["Motor_RPM"]           * (1 + random.uniform(-noise, noise)), 1),
-                    "Motor_Temp":          round(telemetry["Motor_Temp"]           * (1 + random.uniform(-noise, noise)), 2),
-                    "Inverter_Temp":       round(telemetry["Inverter_Temp"]        * (1 + random.uniform(-noise, noise)), 2),
-                    "Motor_Torque":        round(telemetry["Motor_Torque"]         * (1 + random.uniform(-noise, noise)), 2),
-                    "Phase_Current":       round(telemetry["Phase_Current"]        * (1 + random.uniform(-noise, noise)), 2),
-                    "Battery_SOC":         round(min(100.0, telemetry["Battery_SOC"] + random.uniform(-0.1, 0.1)), 2),
-                    "Battery_Temperature": round(telemetry["Battery_Temperature"]  * (1 + random.uniform(-noise, noise)), 2),
-                    "Vehicle_Speed":       round(telemetry["Vehicle_Speed"]        * (1 + random.uniform(-noise, noise)), 2),
-                    "Operating_Hours":     round(telemetry["Operating_Hours"] - (299 - i) / 3600.0, 4),
-                })
-            # Append actual snapshot
-            rows.append({
-                "timestamp":           (base_time + timedelta(seconds=299)).isoformat(),
-                **{k: telemetry[k] for k in [
-                    "Motor_RPM", "Motor_Temp", "Inverter_Temp", "Motor_Torque",
-                    "Phase_Current", "Battery_SOC", "Battery_Temperature",
-                    "Vehicle_Speed", "Operating_Hours"
-                ]},
-                "Vehicle_Type": vehicle_type,
-            })
-
-            df = pd.DataFrame(rows)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df = df.sort_values('timestamp').reset_index(drop=True)
+            df = _build_history_df(telemetry, vehicle_type)
             df_feat = generate_ev_features(df)
             latest = df_feat.iloc[[-1]].copy()
 
-            expected_cols = ev_model_manager.health_model.feature_names_in_
-            X = latest[[c for c in expected_cols if c in latest.columns]]
+            # Use saved feature column order if available, else fall back to model's own
+            if ev_model_manager.feature_columns:
+                feat_cols = [c for c in ev_model_manager.feature_columns if c in latest.columns]
+            else:
+                feat_cols = [c for c in ev_model_manager.health_model.feature_names_in_
+                             if c in latest.columns]
 
-            h_pred  = ev_model_manager.health_model.predict(X)
-            h_probs = ev_model_manager.health_model.predict_proba(X)
+            X = latest[feat_cols].fillna(0)
+
+            h_pred   = ev_model_manager.health_model.predict(X)
+            h_probs  = ev_model_manager.health_model.predict_proba(X)
             health_conf = float(h_probs.max(axis=1)[0])
 
-            f_pred  = ev_model_manager.failure_model.predict(X)
-            f_probs = ev_model_manager.failure_model.predict_proba(X)
+            f_pred   = ev_model_manager.failure_model.predict(X)
+            f_probs  = ev_model_manager.failure_model.predict_proba(X)
             failure_conf = float(f_probs.max(axis=1)[0])
 
             health_status = ev_model_manager.health_encoder.inverse_transform(h_pred)[0]
             failure_mode  = ev_model_manager.failure_encoder.inverse_transform(f_pred)[0]
 
         except Exception as e:
-            # ML failed — fall through to heuristic
+            import logging
+            logging.getLogger(__name__).error(f"EV ML prediction failed, falling back to heuristic: {e}")
             health_status = None
 
     # ── Heuristic Fallback ───────────────────────────────────────
     if health_status is None:
         health_status, failure_mode, health_conf, failure_conf = heuristic_ev_health(telemetry)
-        analysis_type = "Heuristic + AI Analysis (EV Module — ML models not trained yet)"
+        analysis_type = "Heuristic + AI Analysis (EV Brake Module — ML models not trained yet)"
 
     # ── Risk & Recommendation ────────────────────────────────────
     risk_level         = calculate_ev_risk(health_status)
     recommended_action = generate_ev_recommendation(risk_level, failure_mode)
 
-    # ── LLM Deep Analysis (Warning / Critical only) ──────────────
+    # ── LLM Deep Analysis (Warning / Critical only) ───────────────
     ai_analysis = None
     if risk_level != "Low":
         ai_analysis = generate_ev_feedback(
-            vehicle_type   = vehicle_type,
-            telemetry_row  = telemetry,
-            health_status  = health_status,
-            failure_mode   = failure_mode,
-            risk_level     = risk_level
+            vehicle_type  = vehicle_type,
+            telemetry_row = telemetry,
+            health_status = health_status,
+            failure_mode  = failure_mode,
+            risk_level    = risk_level
         )
 
     return {
@@ -186,8 +214,8 @@ def predict_ev_pipeline(vehicle_id: str, telemetry: dict) -> Dict[str, Any]:
         "health_status":      health_status,
         "risk_level":         risk_level,
         "failure_mode":       failure_mode,
-        "health_confidence":  round(health_conf, 2),
-        "failure_confidence": round(failure_conf, 2),
+        "health_confidence":  round(health_conf,   2),
+        "failure_confidence": round(failure_conf,  2),
         "recommended_action": recommended_action,
         "analysis_type":      analysis_type,
         "ai_analysis":        ai_analysis,

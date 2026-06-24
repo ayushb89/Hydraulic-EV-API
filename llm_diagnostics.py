@@ -224,41 +224,42 @@ def generate_unseen_vehicle_feedback(vehicle_type: str, telemetry_row: dict, mat
 
 
 # ─────────────────────────────────────────────────────────────────
-# EV Passenger Car — AI Analysis
-# Dedicated LLM prompt for EV-specific failure modes
+# EV Passenger Car (Brake System) — AI Analysis
+# Dedicated LLM prompt for EV brake-specific failure modes
 # ─────────────────────────────────────────────────────────────────
 def generate_ev_feedback(vehicle_type: str, telemetry_row: dict,
                          health_status: str, failure_mode: str,
                          risk_level: str) -> str:
     """
-    Generates a professional EV maintenance report using EV-specific
-    engineering context and failure modes.
+    Generates a professional EV Brake System maintenance report using
+    EV-specific brake engineering context and failure modes from the
+    real brake telemetry dataset.
     """
     if not is_gemini_configured:
-        return "LLM not configured. Cannot generate EV analysis."
+        return "LLM not configured. Cannot generate EV brake analysis."
 
     prompt = f"""
-    You are an Expert EV Powertrain Diagnostics Engineer at a leading electric vehicle company.
-    Generate a professional EV health report from the sensor telemetry and ML predictions below.
+    You are an Expert EV Brake Systems Diagnostics Engineer at a leading electric vehicle company.
+    Generate a professional EV brake health report from the sensor telemetry and ML predictions below.
 
     STRICT FORMAT RULES:
     1. NEVER write long paragraphs or essays.
     2. Use bullet points only.
-    3. Use concise EV engineering language.
+    3. Use concise EV brake engineering language.
     4. Max 250 words.
-    5. Focus on Motor, Inverter, and Battery systems.
+    5. Focus on Brake Hydraulics, ABS, Brake Fluid, and Regenerative Braking systems.
 
     Vehicle: {vehicle_type}
     ML Predicted Health Status: {health_status}
     ML Predicted Failure Mode:  {failure_mode}
     Risk Level:                 {risk_level}
 
-    Live Sensor Telemetry:
+    Live Brake Sensor Telemetry:
     {telemetry_row}
 
     OUTPUT FORMAT:
 
-    # EV Asset Health Summary
+    # EV Brake System Health Summary
     Vehicle Type: {vehicle_type}
     Health Status: {health_status}
     Failure Mode: {failure_mode}
@@ -275,7 +276,7 @@ def generate_ev_feedback(vehicle_type: str, telemetry_row: dict,
 
     # Sensor Deviations
     Parameter | Current Value | Normal Range | Severity
-    (Motor_RPM | Inverter_Temp | Motor_Temp | Phase_Current | Battery_SOC — max 5 rows)
+    (Brake_Hydraulic_Pressure_bar | Brake_Fluid_Temperature_C | Brake_Fluid_Level_pct | ABS_Activation_Frequency | Vibration_g — max 5 rows)
 
     # Remaining Useful Life (Estimated)
     Estimated Time to Failure:
@@ -289,20 +290,28 @@ def generate_ev_feedback(vehicle_type: str, telemetry_row: dict,
     Long Term (>7 days): • Action
 
     # Business Impact
-    • Range impact:
     • Safety impact:
+    • Downtime risk:
     • Priority:
 
-    EV FAILURE MODE REFERENCE (use these exactly):
-    - Inverter_Thermal_Throttling: Inverter_Temp > 85°C
-    - Motor_Bearing_Wear: High vibration at high RPM
-    - Phase_Current_Imbalance: Phase_Current fluctuating erratically
-    - Battery_Cell_Imbalance: SOC < 15% or Battery_Temp > 45°C
-    - Coolant_Leak: Motor_Temp rising while Inverter_Temp drops
-    - Normal_Operation: All parameters within range
+    EV BRAKE FAILURE MODE REFERENCE (use these exactly for your analysis):
+    - Brake_Fluid_Overheating: Brake_Fluid_Temperature_C > 80°C — fluid boiling risk
+    - ABS_Sensor_Fault: ABS_Activation_Frequency > 7 with high Vibration_g
+    - Hydraulic_Pressure_Loss: Pressure_Differential (Hydraulic - Line) > 15 bar
+    - Brake_Pad_Wear: Elevated Vibration_g (0.25–0.5 g) at normal speeds
+    - Fluid_Contamination: Brake_Fluid_Level_pct < 70% with fluid temp rise
+    - Multiple_Simultaneous_Failures: 3+ sensors out of range simultaneously
+    - Normal_Operation: All brake parameters within healthy range
 
-    RUL RULES FOR EV:
-    If Motor_Temp > 150°C or Inverter_Temp > 90°C: RUL = 0–1 days
+    NORMAL BRAKE RANGES FOR EV:
+    - Brake_Hydraulic_Pressure_bar: 0–80 bar (normal braking), up to 120 bar (emergency)
+    - Brake_Fluid_Temperature_C: 20–65°C (normal), >80°C = WARNING, >100°C = CRITICAL
+    - Brake_Fluid_Level_pct: 85–100% (healthy), <75% = WARNING, <60% = CRITICAL
+    - ABS_Activation_Frequency: 0–3 Hz (normal), >5 Hz = suspicious, >8 Hz = fault
+    - Vibration_g: 0–0.2 g (normal), >0.3 g = pad wear, >0.5 g = rotor damage
+
+    RUL RULES FOR EV BRAKES:
+    If Brake_Fluid_Temp > 100°C or Fluid_Level < 55%: RUL = 0–1 days (stop driving)
     If 3+ parameters abnormal: RUL = 1–7 days
     If 2 parameters abnormal: RUL = 7–30 days
     If 1 parameter abnormal: RUL = 30–90 days
@@ -311,4 +320,4 @@ def generate_ev_feedback(vehicle_type: str, telemetry_row: dict,
     res = call_llm(prompt)
     if res:
         return res
-    return "Error generating EV AI analysis."
+    return "Error generating EV brake AI analysis."

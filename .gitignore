@@ -15,6 +15,9 @@ __pycache__/
 # Models
 # (We want to keep .pkl files, so we DO NOT ignore them)
 
+# Large raw datasets (too big for GitHub — train locally then commit .pkl files)
+EV_Car_Brake_Telemetry_v3_FINAL.csv
+
 # OS generated files
 .DS_Store
 .DS_Store?
