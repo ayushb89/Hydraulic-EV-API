@@ -23,7 +23,7 @@ def generate_hydraulic_failure_payload():
             
         reading = {
             "timestamp": current_time.isoformat(),
-            "Vehicle_Type": "Excavator",                   # Different Vehicle Type
+            "Vehicle_Type": "WheelLoader",                   # Valid Vehicle Type
             "Hydraulic_Pressure": round(pressure, 2),
             "Oil_Temperature": round(oil_temp, 2),
             "Actuator_Angle": round(random.uniform(10.0, 50.0), 2),
@@ -43,7 +43,7 @@ def generate_hydraulic_failure_payload():
     }
 
 def main():
-    url = "http://127.0.0.1:8000/predict"
+    url = "https://hydraulic-ev-api.onrender.com/predict"
     print("Generating 300 readings for EV_002 (Simulating Hydraulic Failure)...")
     payload = generate_hydraulic_failure_payload()
     

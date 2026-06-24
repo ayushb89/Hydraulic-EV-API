@@ -42,7 +42,7 @@ def generate_thermal_failure_payload():
     }
 
 def main():
-    url = "http://127.0.0.1:8000/predict"
+    url = "https://hydraulic-ev-api.onrender.com/predict"
     print("Generating 300 readings for EV_003 (Simulating ONLY Thermal Failure)...")
     payload = generate_thermal_failure_payload()
     
